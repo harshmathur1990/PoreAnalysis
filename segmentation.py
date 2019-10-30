@@ -15,11 +15,13 @@ import sunpy.time
 import numpy as np
 
 
-field_list = [
+normal_field_list = [
     'eccentricity', 'size', 'mean_intensity',
-    'min_intensity', 'major_axis_length', 'minor_axis_length',
-    'orientation', 'weighted_centroid', 'centroid'
+    'major_axis_length', 'minor_axis_length',
+    'orientation'
 ]
+
+comp_field_list = ['weighted_centroid']
 
 
 k_list = [
@@ -109,6 +111,10 @@ def populate_derived_fields():
         a_record.save()
 
 
+def snake_to_camel(word):
+        return ' '.join(x.capitalize() or '_' for x in word.split('_'))
+
+
 def get_error_scatter_plots(field1, field2):
     all_records = model.Record.get_all()
 
@@ -129,7 +135,7 @@ def get_error_scatter_plots(field1, field2):
                     make_tuple(
                         getattr(
                             a_record,
-                            field2[0]
+                            'mean_' + field2[0]
                         )
                     )
                 )[field2[1]]
@@ -137,7 +143,7 @@ def get_error_scatter_plots(field1, field2):
 
         else:
             x_list.append(
-                getattr(a_record, field2)
+                getattr(a_record, 'mean_' + field2)
             )
 
         if isinstance(field1, tuple):
@@ -146,14 +152,14 @@ def get_error_scatter_plots(field1, field2):
                     make_tuple(
                         getattr(
                             a_record,
-                            field1[0]
+                            'mean_' + field1[0]
                         )
                     )
                 )[field1[1]]
             )
         else:
             y_list.append(
-                getattr(a_record, field1)
+                getattr(a_record, 'mean_' + field1)
             )
 
         time_in_sec.append(
@@ -187,17 +193,36 @@ def get_error_scatter_plots(field1, field2):
     if isinstance(field1, tuple):
         plt.title(
             '{} {} vs {} Scatter Plot'.format(
-                field1[0], field1[2], field2[2]
+                snake_to_camel(field1[0]),
+                snake_to_camel(field1[2]),
+                snake_to_camel(field2[2])
             )
         )
-        plt.xlabel('{}'.format(field2[2]))
-        plt.ylabel('{}'.format(field1[2]))
+        plt.xlabel('{}'.format(snake_to_camel(field2[2])))
+        plt.ylabel('{}'.format(snake_to_camel(field1[2])))
     else:
-        plt.title('{} vs {} Scatter Plot'.format(field1, field2))
-        plt.xlabel('{}'.format(field2))
-        plt.ylabel('{}'.format(field1))
+        plt.title(
+            '{} vs {} Scatter Plot'.format(
+                snake_to_camel(field1), snake_to_camel(field2)
+            )
+        )
+        plt.xlabel('{}'.format(snake_to_camel(field2)))
+        plt.ylabel('{}'.format(snake_to_camel(field1)))
     plt.legend()
-    plt.show()
+    if isinstance(field1, tuple):
+        plt.savefig(
+            '{}_{}_vs_{}_scatter.png'.format(field1[0], field1[2], field2[2]),
+            format='png',
+            dpi=300
+        )
+    else:
+        plt.savefig(
+            '{}_vs_{}_scatter.png'.format(field1, field2),
+            format='png',
+            dpi=300
+        )
+    plt.clf()
+    plt.cla()
 
 
 def get_scatter_plots(field1, field2, k_value=None):
@@ -323,16 +348,25 @@ def error_plot_field_vs_date(field, x_y=0):
     plt.errorbar(date_list, value_list, yerr=yerr, fmt='b', ecolor='yellow')
 
     if field not in ['weighted_centroid', 'centroid']:
-        plt.title('{} vs Date Time Plot'.format(field))
+        plt.title('{} vs Time Plot'.format(snake_to_camel(field)))
     else:
-        coord = 'x' if x_y == 0 else 'y'
-        plt.title('{} {} coordinate vs Date Time Plot'.format(field, coord))
+        coord = 'X' if x_y == 0 else 'Y'
+        plt.title('{} {} coordinate vs Time Plot'.format(
+            snake_to_camel(field), coord)
+        )
     plt.xlabel('Time')
-    plt.ylabel(field)
+    plt.ylabel(snake_to_camel(field))
     plt.xticks(x_ticks, rotation=45)
     plt.gcf().autofmt_xdate()
     plt.legend()
-    plt.show()
+    if field not in ['weighted_centroid', 'centroid']:
+        plt.savefig('{}_vs_time.png'.format(field), format='png', dpi=300)
+    else:
+        plt.savefig(
+            '{}_{}_vs_time.png'.format(field, coord), format='png', dpi=300
+        )
+    plt.clf()
+    plt.cla()
 
 
 def plot_field_vs_date(field, k_value=None, x_y=0):
@@ -385,6 +419,30 @@ def plot_field_vs_date(field, k_value=None, x_y=0):
     plt.gcf().autofmt_xdate()
     plt.legend()
     plt.show()
+
+
+def save_all_plots():
+    normal_field_list = [
+        'eccentricity', 'size', 'mean_intensity',
+        'major_axis_length', 'minor_axis_length',
+        'orientation'
+    ]
+
+    for a_field in normal_field_list:
+        error_plot_field_vs_date(a_field)
+
+    error_plot_field_vs_date('weighted_centroid', 0)
+    error_plot_field_vs_date('weighted_centroid', 1)
+
+    get_error_scatter_plots('eccentricity', 'size')
+    get_error_scatter_plots('eccentricity', 'mean_intensity')
+    get_error_scatter_plots('eccentricity', 'orientation')
+    get_error_scatter_plots('mean_intensity', 'size')
+    get_error_scatter_plots('mean_intensity', 'orientation')
+    get_error_scatter_plots('major_axis_length', 'minor_axis_length')
+    get_error_scatter_plots(
+        ('weighted_centroid', 0, 'X'), ('weighted_centroid', 1, 'Y')
+    )
 
 
 if __name__ == '__main__':
