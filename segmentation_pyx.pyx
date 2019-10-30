@@ -12,7 +12,7 @@ import types
 from collections import defaultdict
 from pathlib import Path
 from astropy.io.fits import CompImageHDU
-from model import Record
+from model import Record, PoreData, PoreSectionData
 import skimage.measure
 import matplotlib.pyplot as plt
 from collections import defaultdict
@@ -34,53 +34,15 @@ def timeit(method):
 
 
 @timeit
+def write_to_disk(filename, image, header, hdu_type=None):
+    sunpy.io.fits.write(filename, image, header, hdu_type=hdu_type)
+
+
+@timeit
 def do_median_blur(image, kernel_size=3):
     if kernel_size == 0:
         return image.copy()
     return scipy.signal.medfilt2d(image, kernel_size=kernel_size)
-
-
-@timeit
-def do_segmentation_and_label(image, level=256, step_size=1, kernel_size=3):
-    median_filtered_image = do_median_blur(
-        image,
-        kernel_size=kernel_size
-    )
-
-    max_image_value = np.nanmax(image)
-    if np.isinf(max_image_value):
-        raise Exception('Infinite value in image')
-
-    min_step = max_image_value / level
-    scaled_step_size = step_size * min_step
-
-    feature_map = np.zeros_like(image)
-    no_of_features = 0
-
-    counter = 0
-
-    while counter <= max_image_value:
-        min_value = counter
-        max_value = counter + scaled_step_size
-        temp_map = np.zeros_like(image)
-        temp_map[median_filtered_image >= min_value] = 1.0
-        temp_map[median_filtered_image > max_value] = 0.0
-        _fmap, _no_of_f = scipy.ndimage.label(temp_map)
-
-        _fmap += no_of_features
-
-        _fmap[_fmap == no_of_features] = 0.0
-
-        feature_map = np.add(
-            feature_map,
-            _fmap
-        )
-
-        no_of_features += _no_of_f
-
-        counter += scaled_step_size
-
-    return feature_map, no_of_features
 
 
 cdef tuple get_intensity_to_o_of_pixel_curve_in_c(np.ndarray data):
@@ -242,29 +204,6 @@ def actual_size_mean_min_intensity(data, mask):
     return total_pixels, mean_intensity, np.nanmin(image)
 
 
-def size_mean_min_intensity(data_path, segment_path):
-    data, _ = sunpy.io.fits.read(data_path)[0]
-    mask, _ = sunpy.io.fits.read(segment_path)[1]
-    return actual_size_mean_min_intensity(data, mask)
-
-
-def calculate_rest_of_stuff(base_path, segment_base_path):
-    everything = base_path.glob('**/*')
-    files = [x for x in everything if x.is_file() and x.name.endswith('.fts')]
-
-    for file in files:
-        name = file.name + '.segment.fits'
-        segment_path = segment_base_path / name
-        total_pixels, mean_intensity, min_value = size_mean_min_intensity(
-            file, segment_path
-        )
-        record = Record.find_by_date(get_datetime_from_name(file))
-        record.size = total_pixels
-        record.mean_intensity = mean_intensity
-        record.min_intensity = min_value
-        record.save()
-
-
 def wrapper_to_initialise(rr, cc, values):
 
     mapper_dict = defaultdict(dict)
@@ -280,7 +219,7 @@ def wrapper_to_initialise(rr, cc, values):
     return initialize_my_array
 
 
-def subpartition(image, mask):
+def subpartition(image, mask, n_clusters=3):
     rr, cc = np.where(mask.astype(np.bool))
 
     nrr = rr.reshape((len(rr), 1))
@@ -288,7 +227,7 @@ def subpartition(image, mask):
 
     X = np.concatenate((nrr, ncc), axis=1)
 
-    kmeans = KMeans(n_clusters=3)
+    kmeans = KMeans(n_clusters=n_clusters)
 
     kresult = kmeans.fit(
         X,
@@ -314,104 +253,167 @@ def subpartition(image, mask):
     return new_mask
 
 
+def save_for_sub_segment(
+    image, segment, k, threshold, pore_data, file, write_path
+):
+    section_mask = subpartition(image, segment, n_clusters=4)
+
+    subsegment_path = file.name + '.' + str(threshold) + '.subsegment.fits'
+    write_file_path_image_subsegment = write_path / subsegment_path
+
+    write_to_disk(
+        write_file_path_image_subsegment, section_mask,
+        dict(), hdu_type=CompImageHDU
+    )
+
+    section_region_props = skimage.measure.regionprops(
+        label_image=section_mask.astype(int),
+        intensity_image=image,
+        cache=True
+    )
+
+    i = 1
+
+    for subregion in section_region_props:
+        _this_segment = (section_mask == i) * i
+
+        pore_section_data = PoreSectionData()
+
+        a, b, c = actual_size_mean_min_intensity(
+            image, _this_segment
+        )
+
+        _size, _mean, _min = a, b, c
+
+        pore_section_data.pore_data_id = pore_data.id
+
+        pore_section_data.k = k
+
+        pore_section_data.threshold = threshold
+
+        pore_section_data.eccentricity = subregion.eccentricity
+
+        pore_section_data.size = _size
+
+        pore_section_data.mean_intensity = _mean
+
+        pore_section_data.min_intensity = _min
+
+        pore_section_data.save()
+
+        i += 1
+
+
+def save_for_this_segment(image, k, record, file, write_path):
+    mn = image.mean()
+    sd = image.std()
+    threshold = get_threshold(mn, sd, k)
+    segment = relaxed_pore_image(image, threshold)
+    kl = segment * image * 0.2 + image
+    filename = file.name + '.' + str(threshold) + '.fits'
+    write_file_path_image_identify = write_path / filename
+
+    write_to_disk(
+        write_file_path_image_identify, kl, dict(), hdu_type=CompImageHDU
+    )
+
+    segment_path = file.name + '.' + str(threshold) + '.segment.fits'
+    write_file_path_image_segment = write_path / segment_path
+    write_to_disk(
+        write_file_path_image_segment, segment.astype(np.float64),
+        dict(), hdu_type=CompImageHDU
+    )
+
+    a, b, c = actual_size_mean_min_intensity(
+        image, segment
+    )
+    total_pixels, mean_intensity, min_value = a, b, c
+
+    pore_data = PoreData()
+
+    region_props = skimage.measure.regionprops(
+        label_image=segment,
+        intensity_image=image,
+        cache=True
+    )
+
+    for region in region_props:
+        pore_data.record_id = record.id
+
+        pore_data.k = k
+
+        pore_data.threshold = threshold
+
+        pore_data.eccentricity = region.eccentricity
+
+        pore_data.size = total_pixels
+
+        pore_data.mean_intensity = mean_intensity
+
+        pore_data.min_intensity = min_value
+
+        pore_data.major_axis_length = region.major_axis_length
+
+        pore_data.minor_axis_length = region.minor_axis_length
+
+        pore_data.inertia_tensor_eigvals = str(
+            region.inertia_tensor_eigvals
+        )
+
+        pore_data.orientation = region.orientation
+
+        pore_data.weighted_centroid = str(region.weighted_centroid)
+
+        pore_data.centroid = str(region.centroid)
+
+    pore_data.save()
+
+    save_for_sub_segment(
+        image, segment, k, threshold, pore_data, file, write_path
+    )
+
+
+def get_threshold(mn, sd, k):
+    return mn + (k * sd)
+
+
 @timeit
-def do_all(base_path, write_path):
+def read_file(file):
+    return sunpy.io.fits.read(file)[0]
+
+
+@timeit
+def do_all(base_path, write_path, dividor, remainder):
     everything = base_path.glob('**/*')
     files = [x for x in everything if x.is_file() and x.name.endswith('.fts')]
 
-    for file in files:
-        image, _ = sunpy.io.fits.read(file)[0]
-        hist_data = np.histogram(image[200:800, 200:1000])
-        segment = relaxed_pore_image(image, hist_data[1][3])
-        kl = segment * image * 0.2 + image
-        write_file_path_image_identify = write_path / file.name
-        sunpy.io.fits.write(
-            write_file_path_image_identify, kl, dict(), hdu_type=CompImageHDU
-        )
-        segment_path = file.name + '.segment.fits'
-        write_file_path_image_segment = write_path / segment_path
-        sunpy.io.fits.write(
-            write_file_path_image_segment, segment.astype(np.float64),
-            dict(), hdu_type=CompImageHDU
-        )
-        a, b, c = actual_size_mean_min_intensity(
-            image, segment
-        )
-        total_pixels, mean_intensity, min_value = a, b, c
+    files.sort(key=get_datetime_from_name)
+
+    for index, file in enumerate(files):
+        if index % dividor != remainder:
+            continue
+
+        image, _ = read_file(file)
+        image[np.where(image < 0)] = 0.0
+        image = image / np.max(image)
+        k_list = [
+            -3.02,
+            -3.05,
+            -3.23,
+            -3.11,
+            -3.08,
+            -3.14,
+            -3.17,
+            -3.20,
+            -3.26
+        ]
 
         record = Record(
             date_time=get_datetime_from_name(file)
         )
 
-        section_mask = subpartition(image, segment)
+        record = record.save()
 
-        subsegment_path = file.name + '.subsegment.fits'
-        write_file_path_image_subsegment = write_path / subsegment_path
-        sunpy.io.fits.write(
-            write_file_path_image_subsegment, section_mask,
-            dict(), hdu_type=CompImageHDU
-        )
+        for k in k_list:
 
-        section_region_props = skimage.measure.regionprops(
-            label_image=section_mask.astype(int),
-            intensity_image=image,
-            cache=True
-        )
-
-        name_dict = {
-            1: 'one',
-            2: 'two',
-            3: 'three'
-        }
-
-        i = 1
-        for subregion in section_region_props:
-            _this_segment = (section_mask == i) * i
-            a, b, c = actual_size_mean_min_intensity(
-                image, _this_segment
-            )
-
-            _size, _mean, _min = a, b, c
-
-            _var = 'section_' + name_dict[i]
-            setattr(record, _var + '_size', _size)
-            setattr(record, _var + '_mean_intensity', _mean)
-            setattr(record, _var + '_min_intensity', _min)
-            setattr(record, _var + '_eccentricity', subregion.eccentricity)
-
-            i += 1
-
-        region_props = skimage.measure.regionprops(
-            label_image=segment,
-            intensity_image=image,
-            cache=True
-        )
-
-        for region in region_props:
-
-            record.threshold = hist_data[1][3]
-            record.eccentricity = region.eccentricity
-            record.size = total_pixels
-            record.mean_intensity = mean_intensity
-            record.min_intensity = min_value
-        record.save()
-
-
-if __name__ == '__main__':
-    filename = '/Users/harshmathur/Documents/' + \
-        'CourseworkRepo/PoreAnalyis/data/' + \
-        'filtrd_hifi_20170928_085120_sd_speckle.fts'
-
-    image, header = sunpy.io.fits.read(filename)[0]
-
-    image = image.byteswap().newbyteorder()
-
-    feature_map, no_of_features = do_segmentation_and_label(
-        image, step_size=10
-    )
-
-    sunpy.io.fits.write(
-        'feature_map.fits',
-        feature_map,
-        {'no_of_features': no_of_features}
-    )
+            save_for_this_segment(image, k, record, file, write_path)
