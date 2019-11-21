@@ -1,6 +1,7 @@
 import os
 import sys
 import datetime
+import pywt
 from datetime import timedelta
 from ast import literal_eval as make_tuple
 from pathlib import Path
@@ -13,6 +14,11 @@ import model
 import matplotlib.cm as cm
 import sunpy.time
 import numpy as np
+from utils import get_julian_time
+import scipy.interpolate
+from waveletFunctions import wavelet, wave_signif
+from matplotlib.gridspec import GridSpec
+import matplotlib.ticker as ticker
 
 
 normal_field_list = [
@@ -32,6 +38,278 @@ k_list = [
     -3.20,
     -3.26
 ]
+
+
+def plot_according_to_library(field):
+    cumulative_differences, interpolated_data = get_interpolated_data(field)
+
+    sst = interpolated_data
+
+    sst = sst - np.mean(sst)
+
+    variance = np.std(sst, ddof=1) ** 2
+
+    n = len(sst)
+    dt = 11
+    time = np.arange(len(sst)) * dt + 1  # construct time array
+
+    xlim = ([time[0], time[-1]])  # plotting range
+
+    pad = 1  # pad the time series with zeroes (recommended)
+    dj = 0.25 / 4  # this will do 4 sub-octaves per octave
+    s0 = 2 * dt  # this says start at a scale of 6 months
+    j1 = 7 / dj  # this says do 7 powers-of-two with dj sub-octaves each
+    lag1 = 0.72  # lag-1 autocorrelation for red noise background
+    mother = 'MORLET'
+
+    # Wavelet transform:
+    wave, period, scale, coi = wavelet(sst, dt, pad, dj, s0, j1, mother)
+    power = (np.abs(wave)) ** 2  # compute wavelet power spectrum
+    global_ws = (np.sum(power, axis=1) / n)  # time-average over all times
+
+    # Significance levels:
+    signif = wave_signif(
+        (
+            [variance]
+        ),
+        dt=dt,
+        sigtest=0, scale=scale,
+        lag1=lag1, mother=mother
+    )
+    sig95 = signif[:, np.newaxis].dot(
+        np.ones(n)[np.newaxis, :]
+    )  # expand signif --> (J+1)x(N) array
+    sig95 = power / sig95  # where ratio > 1, power is significant
+
+    # Global wavelet spectrum & significance levels:
+    dof = n - scale  # the -scale corrects for padding at edges
+    global_signif = wave_signif(
+        variance, dt=dt, scale=scale, sigtest=1,
+        lag1=lag1, dof=dof, mother=mother
+    )
+
+    fig = plt.figure(figsize=(9, 10))
+
+    gs = GridSpec(3, 4, hspace=0.4, wspace=0.75)
+
+    plt.subplots_adjust(
+        left=0.1, bottom=0.05,
+        right=0.9, top=0.95, wspace=0, hspace=0
+    )
+    plt.subplot(gs[0, 0:3])
+    plt.plot(time, sst, 'k')
+    plt.xlim(xlim[:])
+    plt.xlabel('Time (Seconds)')
+    plt.ylabel('{}'.format(snake_to_camel(field)))
+    plt.title('a) {} vs Time'.format(snake_to_camel(field)))
+
+    # --- Contour plot wavelet power spectrum
+    # plt3 = plt.subplot(3, 1, 2)
+    plt3 = plt.subplot(gs[1, 0:3])
+    levels = [0, 0.5, 1, 2, 4, 999]
+    CS = plt.contourf(
+        time, period, power, len(levels)
+    )  # *** or use 'contour'
+    im = plt.contourf(
+        CS, levels=levels,
+        colors=['white', 'bisque', 'orange', 'orangered', 'darkred']
+    )
+    plt.xlabel('Time (Seconds)')
+    plt.ylabel('Period (Seconds)')
+    plt.title('b) Wavelet Power Spectrum (contours at 0.5,1,2,4\u00B0C$^2$)')
+    plt.xlim(xlim[:])
+    # 95# significance contour, levels at -99 (fake) and 1 (95# signif)
+    plt.contour(time, period, sig95, [-99, 1], colors='k')
+    # cone-of-influence, anything "below" is dubious
+    plt.plot(time, coi, 'k')
+    # format y-scale
+    plt3.set_yscale('log', basey=2, subsy=None)
+    plt.ylim([np.min(period), np.max(period)])
+    ax = plt.gca().yaxis
+    ax.set_major_formatter(ticker.ScalarFormatter())
+    plt3.ticklabel_format(axis='y', style='plain')
+    plt3.invert_yaxis()
+    # set up the size and location of the colorbar
+
+    # position = fig.add_axes([0.5, 0.36, 0.2, 0.01])
+
+    # plt.colorbar(
+    #     im, cax=position, orientation='horizontal'
+    # )  # fraction=0.05, pad=0.5)
+
+    plt.subplots_adjust(right=0.7, top=0.9)
+
+    # --- Plot global wavelet spectrum
+    plt4 = plt.subplot(gs[1, -1])
+    plt.plot(global_ws, period)
+    plt.plot(global_signif, period, '--')
+    plt.xlabel('Power (\u00B0C$^2$)')
+    plt.title('c) Global Wavelet Spectrum')
+    plt.xlim([0, 1.25 * np.max(global_ws)])
+    # format y-scale
+    plt4.set_yscale('log', basey=2, subsy=None)
+    plt.ylim([np.min(period), np.max(period)])
+    ax = plt.gca().yaxis
+    ax.set_major_formatter(ticker.ScalarFormatter())
+    plt4.ticklabel_format(axis='y', style='plain')
+    plt4.invert_yaxis()
+
+    # fig.tight_layout()
+
+    plt.show()
+    # plt.savefig(
+    #     '{}_contour.png'.format(field),
+    #     format='png',
+    #     dpi=300,
+    #     bbox_inches='tight'
+    # )
+
+
+def get_interpolated_data(field):
+    all_records = model.Record.get_all()
+    date_list = list()
+    field_list = list()
+
+    for a_record in all_records:
+        date_list.append(a_record.date_time)
+        field_list.append(getattr(a_record, 'mean_' + field))
+
+    julian_dates = get_julian_time(date_list)
+
+    differences = list()
+
+    for index, jd in enumerate(julian_dates):
+        if index == 0:
+            differences.append(0.0)
+        else:
+            differences.append(
+                (jd - julian_dates[index - 1]) * 86400
+            )
+
+    differences = np.round(np.array(differences))
+
+    culprit_index = int(np.where(differences == 504)[0][0])
+
+    new_differences = np.array(
+        list(differences[0:culprit_index]) +
+        [11] * 45 + [9] +
+        list(differences[culprit_index + 1:])
+    )
+
+    missing_elements = np.array(
+        field_list[0:culprit_index] +
+        [np.nan] * 46 +
+        field_list[culprit_index + 1:]
+    )
+
+    mask = np.isfinite(missing_elements)
+
+    new_differences += 1
+
+    cumulative_differences = np.cumsum(new_differences)
+
+    interpolation_func = scipy.interpolate.interp1d(
+        cumulative_differences[mask],
+        missing_elements[mask],
+        kind='cubic'
+    )
+
+    interpolated_data = interpolation_func(cumulative_differences)
+
+    return cumulative_differences, interpolated_data
+
+
+def get_cwt(field, sampling_interval=11):
+    cumulative_differences, interpolated_data = get_interpolated_data(field)
+
+    coefs, freq = pywt.cwt(
+        data=interpolated_data,
+        scales=np.arange(1, 128),
+        wavelet='morl',
+        sampling_period=sampling_interval
+    )
+
+    return coefs, freq, cumulative_differences, interpolated_data
+
+
+def save_wavelet_plot(field):
+
+    fig, axs = plt.subplots(2)
+
+    coefs, freq, cumulative_differences, interpolated_data = get_cwt(field)
+
+    coefs = np.abs(coefs) ** 2
+
+    period = 1 / freq
+
+    def f(x, y):
+        return coefs[x][y]
+
+    vec_f = np.vectorize(f)
+
+    x = np.arange(coefs.shape[0])
+
+    y = np.arange(coefs.shape[1])
+
+    X, Y = np.meshgrid(x, y)
+
+    Z = vec_f(X, Y)
+
+    axs[0].plot(cumulative_differences, interpolated_data)
+
+    axs[0].set_xlabel('Time in Seconds')
+
+    axs[0].set_ylabel('{}'.format(snake_to_camel(field)))
+
+    axs[0].set_title('{} vs Time Plot'.format(snake_to_camel(field)))
+
+    im = axs[1].contourf(Y, X, Z)
+
+    pos_y = np.int64(np.linspace(0, 126, 10))
+
+    pos_x = np.int64(np.linspace(0, 350, 10))
+
+    yticks = np.round(period[pos_y], decimals=2)
+
+    xticks = cumulative_differences[pos_x]
+
+    axs[1].set_xticks(pos_x)
+
+    axs[1].set_xticklabels(xticks)
+
+    axs[1].set_yticks(pos_y)
+
+    axs[1].set_yticklabels(yticks)
+
+    axs[1].set_xlabel('Time in Seconds')
+
+    axs[1].set_ylabel('Period in Seconds')
+
+    axs[1].set_title('{} Time frequency Plot'.format(snake_to_camel(field)))
+
+    fig.colorbar(im, ax=axs[1])
+
+    fig.tight_layout()
+
+    plt.xticks(rotation=45)
+
+    plt.legend()
+
+    plt.savefig(
+        '{}_contour.png'.format(field),
+        format='png',
+        dpi=300,
+        bbox_inches='tight'
+    )
+
+    plt.clf()
+
+    plt.cla()
+
+
+def save_normal_fields_wavelet_plots():
+    for field in normal_field_list:
+        save_wavelet_plot(field)
 
 
 def populate_derived_fields():
