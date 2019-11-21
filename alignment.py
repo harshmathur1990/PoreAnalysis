@@ -9,18 +9,168 @@ import astropy.coordinates
 import sunpy.image.resample
 import scipy.ndimage
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 from sunpy.image.coalignment \
-    import calculate_match_template_shift,\
-    mapsequence_coalign_by_match_template as mc_coalign
+    import mapsequence_coalign_by_match_template as mc_coalign
 
 
 def compare_two_images(image1, image2):
+
+    image1 = image1.copy()
+
+    image2 = image2.copy()
+
+    image1 = image1 / np.max(image1)
+
+    image2 = image2 / np.max(image2)
+
+    final_image_1 = np.zeros(
+        shape=(
+            max(
+                image1.shape[0],
+                image2.shape[0]
+            ),
+            max(
+                image1.shape[1],
+                image2.shape[1]
+            )
+        )
+    )
+
+    final_image_2 = np.zeros(
+        shape=(
+            max(
+                image1.shape[0],
+                image2.shape[0]
+            ),
+            max(
+                image1.shape[1],
+                image2.shape[1]
+            )
+        )
+    )
+
+    final_image_1[0: image1.shape[0], 0: image1.shape[1]] = image1
+
+    final_image_2[0: image2.shape[0], 0: image2.shape[1]] = image2
+
     fig, axs = plt.subplots(2)
 
-    axs[0].imshow(image1, cmap='gray')
+    axs[0].imshow(final_image_1, cmap='gray')
 
-    axs[1].imshow(image2, cmap='gray')
+    axs[1].imshow(final_image_2, cmap='gray')
 
+    plt.show()
+
+
+def compare_by_overlay(image1, image2, factor1=1, factor2=0.2):
+
+    image1 = image1.copy()
+
+    image2 = image2.copy()
+
+    image1 = image1 / np.max(image1)
+
+    image2 = image2 / np.max(image2)
+
+    final_image = np.zeros(
+        shape=(
+            max(
+                image1.shape[0],
+                image2.shape[0]
+            ),
+            max(
+                image1.shape[1],
+                image2.shape[1]
+            )
+        )
+    )
+
+    shape_0_min = min(image1.shape[0], image2.shape[0])
+    shape_1_min = min(image1.shape[1], image2.shape[1])
+    final_image[
+        0: shape_0_min, 0: shape_1_min
+    ] = (
+        factor1 * image1[
+            0: shape_0_min, 0: shape_1_min
+        ]
+    ) + (
+        factor2 * image2[
+            0: shape_0_min, 0: shape_1_min
+        ]
+    )
+
+    plt.imshow(final_image, cmap='gray')
+
+    plt.show()
+
+
+def flicker(image1, image2, rate):
+
+    image1 = image1.copy()
+
+    image2 = image2.copy()
+
+    image1 = image1 / np.max(image1)
+
+    image2 = image2 / np.max(image2)
+
+    final_image_1 = np.zeros(
+        shape=(
+            max(
+                image1.shape[0],
+                image2.shape[0]
+            ),
+            max(
+                image1.shape[1],
+                image2.shape[1]
+            )
+        )
+    )
+
+    final_image_2 = np.zeros(
+        shape=(
+            max(
+                image1.shape[0],
+                image2.shape[0]
+            ),
+            max(
+                image1.shape[1],
+                image2.shape[1]
+            )
+        )
+    )
+
+    final_image_1[0: image1.shape[0], 0: image1.shape[1]] = image1
+
+    final_image_2[0: image2.shape[0], 0: image2.shape[1]] = image2
+
+    imagelist = [final_image_1, final_image_2]
+
+    rate = rate * 1000
+
+    fig = plt.figure()  # make figure
+
+    im = plt.imshow(
+        imagelist[0],
+        origin='lower',
+        cmap='gray',
+        interpolation='none'
+    )
+
+    # function to update figure
+    def updatefig(j):
+        # set the data in the axesimage object
+        im.set_array(imagelist[j])
+        # return the artists set
+        return [im]
+    # kick off the animation
+    animation.FuncAnimation(
+        fig,
+        updatefig,
+        frames=range(2),
+        interval=rate, blit=True
+    )
     plt.show()
 
 
@@ -78,10 +228,10 @@ def do_align_hmi_with_hifi(hifi_path, hmi_image):
 
     new_submap = sunpy.map.Map(resampled_hmi_image, new_meta)
 
-    angle = -20
+    angle = 20
 
     rotated_hifi_data = scipy.ndimage.rotate(
-        hifi_data,
+        hifi_data[::-1, :],
         angle=angle,
         order=3,
         prefilter=False,
@@ -101,9 +251,7 @@ def do_align_hmi_with_hifi(hifi_path, hmi_image):
 
     map_sequence = sunpy.map.Map((rotated_map, new_submap), sequence=True)
 
-    return calculate_match_template_shift(
-        map_sequence
-    ), hifi_data, rotated_hifi_data, new_submap
+    return mc_coalign(map_sequence)
 
 
 def get_datetime_from_hifi_image(file):
