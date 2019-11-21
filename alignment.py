@@ -8,8 +8,20 @@ import astropy.units as u
 import astropy.coordinates
 import sunpy.image.resample
 import scipy.ndimage
+import matplotlib.pyplot as plt
 from sunpy.image.coalignment \
-    import calculate_match_template_shift
+    import calculate_match_template_shift,\
+    mapsequence_coalign_by_match_template as mc_coalign
+
+
+def compare_two_images(image1, image2):
+    fig, axs = plt.subplots(2)
+
+    axs[0].imshow(image1, cmap='gray')
+
+    axs[1].imshow(image2, cmap='gray')
+
+    plt.show()
 
 
 def do_align_hmi_with_hifi(hifi_path, hmi_image):
@@ -21,9 +33,13 @@ def do_align_hmi_with_hifi(hifi_path, hmi_image):
 
     corrected_hmi_map = hmi_map.rotate()
 
-    init = (-499.1 - 58.995 / 2, -295 - 58.995 / 2)
+    # spread = 58.995
 
-    final = (-499.1 + 58.995 / 2, -295 + 58.995 / 2)
+    spread = 29.4975
+
+    init = (-499.1 - spread / 2, -295 - spread / 2)
+
+    final = (-499.1 + spread / 2, -295 + spread / 2)
 
     y0 = init[1] * u.arcsec
 
@@ -62,9 +78,7 @@ def do_align_hmi_with_hifi(hifi_path, hmi_image):
 
     new_submap = sunpy.map.Map(resampled_hmi_image, new_meta)
 
-    map_sequence = sunpy.map.Map((new_submap,), sequence=True)
-
-    angle = -75.7696 + 180
+    angle = -20
 
     rotated_hifi_data = scipy.ndimage.rotate(
         hifi_data,
@@ -77,8 +91,18 @@ def do_align_hmi_with_hifi(hifi_path, hmi_image):
 
     rotated_hifi_data[np.where(np.isnan(rotated_hifi_data))] = 0.0
 
+    rotated_meta = new_meta.copy()
+
+    rotated_meta['naxis1'] = rotated_hifi_data.shape[0]
+
+    rotated_meta['naxis2'] = rotated_hifi_data.shape[1]
+
+    rotated_map = sunpy.map.Map(rotated_hifi_data, rotated_meta)
+
+    map_sequence = sunpy.map.Map((rotated_map, new_submap), sequence=True)
+
     return calculate_match_template_shift(
-        map_sequence, template=rotated_hifi_data
+        map_sequence
     ), hifi_data, rotated_hifi_data, new_submap
 
 
