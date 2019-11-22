@@ -174,7 +174,7 @@ def flicker(image1, image2, rate):
     plt.show()
 
 
-def do_align_hmi_with_hifi(hifi_path, hmi_image):
+def do_align_hmi_with_hifi(hifi_path, hmi_image, angle=15):
     hifi_data, hifi_header = sunpy.io.fits.read(hifi_path)[0]
 
     hmi_data, hmi_header = sunpy.io.fits.read(hmi_image)[1]
@@ -227,8 +227,6 @@ def do_align_hmi_with_hifi(hifi_path, hmi_image):
     new_meta['cdelt2'] = 0.0253
 
     new_submap = sunpy.map.Map(resampled_hmi_image, new_meta)
-
-    angle = 20
 
     rotated_hifi_data = scipy.ndimage.rotate(
         hifi_data[::-1, :],
