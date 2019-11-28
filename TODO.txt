@@ -1,0 +1,4 @@
+1. normalise with quiet sun mean : Done
+2. Orientation Plots, to compare if ellipse is really rotating
+3. try to fit angular evolution with theta = a0 + k t + a1  cos (w t + x1) + a2 cos (c w t + x2), if we can fit these over the data, torsional wave.
+4. sub partition based on thresholding between min intensity and boundary, and which sub structure is contributing to the orientation change?

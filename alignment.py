@@ -1,3 +1,4 @@
+import sys
 import pathlib
 import datetime
 import utils
@@ -105,7 +106,7 @@ def compare_by_overlay(image1, image2, factor1=1, factor2=0.2):
     plt.show()
 
 
-def flicker(image1, image2, rate):
+def flicker(image1, image2, rate, animation_path):
 
     image1 = image1.copy()
 
@@ -165,13 +166,24 @@ def flicker(image1, image2, rate):
         # return the artists set
         return [im]
     # kick off the animation
-    animation.FuncAnimation(
+    ani = animation.FuncAnimation(
         fig,
         updatefig,
         frames=range(2),
         interval=rate, blit=True
     )
-    plt.show()
+
+    Writer = animation.writers['ffmpeg']
+
+    writer = Writer(
+        fps=1,
+        metadata=dict(artist='Me'),
+        bitrate=1800
+    )
+
+    ani.save(animation_path, writer=writer)
+
+    # plt.show()
 
 
 def do_align_hmi_with_hifi(hifi_path, hmi_image, angle=15):
@@ -223,6 +235,8 @@ def do_align_hmi_with_hifi(hifi_path, hmi_image, angle=15):
 
     new_meta['naxis1'] = resampled_hmi_image.shape[0]
     new_meta['naxis2'] = resampled_hmi_image.shape[1]
+    new_meta['crpix1'] = new_meta['crpix1'] * new_meta['cdelt1'] / 0.0253
+    new_meta['crpix2'] = new_meta['crpix2'] * new_meta['cdelt2'] / 0.0253
     new_meta['cdelt1'] = 0.0253
     new_meta['cdelt2'] = 0.0253
 
@@ -247,7 +261,7 @@ def do_align_hmi_with_hifi(hifi_path, hmi_image, angle=15):
 
     rotated_map = sunpy.map.Map(rotated_hifi_data, rotated_meta)
 
-    map_sequence = sunpy.map.Map((rotated_map, new_submap), sequence=True)
+    map_sequence = sunpy.map.Map((new_submap, rotated_map), sequence=True)
 
     return mc_coalign(map_sequence)
 
@@ -306,6 +320,108 @@ def call_align_func(hifi_path, base_path_hmi):
     return do_align_hmi_with_hifi(hifi_path, hmi_image)
 
 
+def set_nan():
+    images_path = pathlib.Path(
+        '/Volumes/Harsh 9599771751/Gregor Data/' +
+        'aligned_hifi/'
+    )
+
+    everything = images_path.glob('**/*')
+
+    hifi_images = [
+        x for x in everything if x.is_file() and x.name.endswith('.fts')
+    ]
+
+    for hifi_image in hifi_images:
+        data, header = sunpy.io.fits.read(hifi_image)[0]
+
+        # data = np.round(data, decimals=2)
+
+        # data[np.where(data == 0.0)] = np.nan
+
+        # data[np.where(data < 0.2)] = np.nan
+
+        header['CRPIX1'] = header['CRPIX1'] * 0.504346 / 0.0253
+
+        header['CRPIX2'] = header['CRPIX2'] * 0.504346 / 0.0253
+
+        sunpy.io.fits.write(hifi_image, data, header, overwrite=True)
+
+
+def do_all(dividor, remainder):
+    hifi_path = pathlib.Path(
+        '/Volumes/Harsh 9599771751/Gregor Data/' +
+        'filtrd1/'
+    )
+
+    everything = hifi_path.glob('**/*')
+
+    hifi_images = [
+        x for x in everything if x.is_file() and x.name.endswith('.fts')
+    ]
+
+    hifi_images.sort(key=get_datetime_from_hifi_image)
+
+    base_path_hmi = pathlib.Path(
+        '/Volumes/Harsh 9599771751/Continuum'
+    )
+
+    get_corresponding_images = prepare_get_corresponding_images(base_path_hmi)
+
+    animation_write_path = pathlib.Path(
+        '/Volumes/Harsh 9599771751/Gregor Data/' +
+        'animation_hifi/'
+    )
+
+    aligned_write_path = pathlib.Path(
+        '/Volumes/Harsh 9599771751/Gregor Data/' +
+        'aligned_hifi/'
+    )
+
+    for index, hifi_image in enumerate(hifi_images):
+
+        if index % dividor != remainder:
+            continue
+
+        hmi_image, status = get_corresponding_images(hifi_image)
+
+        coaligned_map = do_align_hmi_with_hifi(hifi_image, hmi_image)
+
+        mp4_name = hifi_image.name + '.mp4'
+
+        animation_path = animation_write_path / mp4_name
+
+        flicker(
+            coaligned_map[0].data,
+            coaligned_map[1].data,
+            1,
+            animation_path
+        )
+
+        image1 = coaligned_map[0].data
+
+        image2 = coaligned_map[1].data
+
+        final_image = np.zeros(
+            shape=(
+                max(
+                    image1.shape[0],
+                    image2.shape[0]
+                ),
+                max(
+                    image1.shape[1],
+                    image2.shape[1]
+                )
+            )
+        )
+
+        final_image[0: image2.shape[0], 0: image2.shape[1]] = image2
+
+        aligned_path = aligned_write_path / hifi_image.name
+
+        sunpy.io.fits.write(aligned_path, final_image, coaligned_map[1].meta)
+
+
 def call_one():
 
     hifi_path = pathlib.Path(
@@ -318,3 +434,10 @@ def call_one():
     )
 
     return call_align_func(hifi_path, base_path_hmi)
+
+
+if __name__ == '__main__':
+    # dividor = int(sys.argv[1])
+    # remainder = int(sys.argv[2])
+    # do_all(dividor, remainder)
+    set_nan()

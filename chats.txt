@@ -1,0 +1,183 @@
+ha ha ha.. you are a lucky bastard… I got the confirmation that they will pay a monthly allowance or 1500 euros 😉
+sorry.. that I didn´t responded earlier.. have been working on the bathroom.. Now I´m in the office again.. checking emails and stuff.. we can discuss later or tomorrow
+18:09
+No issues
+I saw that email
+Yeah truly lucky I guess 🙈😉
+Hahaha yes
+For booking the hotel, what date should I book? 18-25 November?
+jose is trying to look up the date
+but better look air bnb
+can be nicer and cheaper
+I'll check
+Just need to dates
+okay... jose will go monday 25
+so monday 25 in the evening you can have the couch in my appartement
+Cool
+checking your email now
+Thanks 🙂
+you have also already a draft of the poster?
+Not yet started
+ah okay
+major axis length and others are in pixels?
+for the poster we should express that probably in Mm
+Yes
+or km
+Okay
+you have the conversion factor?
+Generally you need to account for resolution and angle ( projection effect)
+Resolution I can find out from Gregor site
+ha ha ha.. true.. didn´t even think in that moment at the projection effect 😉
+I think and hope we were quite at the centre.. so not too much difference
+Okay
+nice plots!
+can you plot the eccentricity size scatter with changing colors of the symbols depending on the time!?
+Meaning
+cause there is temporal evolution in the scatter… meaning that it could be that certain points form regions in time.. or that there is a peridocity and shown in color we could figure that out
+like the color of the symbol represents the time
+like blue is in the beginning and end of the series is red
+and middle is green
+Okay
+I'll do that
+then one can see if for example all the early points group and all the late points group
+Okay
+Makes sense
+I'll send you by tonight or tomorrow
+sure
+something like
+Got it
+then we could say… in the beginning there is a clear scatter and relationship between eccentricity to size
+later on it is not clear.. then it becomes inverse.. bla bla
+Understood
+I think it makes sense.. maybe it is nothing.. bu tmaybe it will start to group 😉
+Hehe okay
+Will do that
+and we have to play with scatters between the other quantities
+e.g. major and minor axis
+Don't you think that will obviously have a correlation?
+not necessary
+As eccentricity is derived by major and minor axis
+that´s like squeezing
+but that
+would be like sausage mode
+and maybe the mode changes
+Okay
+I'll plot that and see
+And see for other scatter plots
+And if time is involved use color variation
+like squeezing… saussage mode… no oscillation
+exactly
+well. and at some point we would have to look for periodicities 😉
+Fft?
+Or you want to smooth the data before
+or better wavelet
+Okay
+no idea.. we could try to smooth too
+Will do that
+FFT is good for long sequences but ours is rather short.. so wavelet should be better
+but I never did wavelets myself
+Hehe
+There is a package in python
+but I think the analysis with different segmentation thresholds is nice
+cause it shows that the behaviour stays the same
+and I think the boundary is nicer now
+the 3_14s are better I think
+then the 3_08
+Yes, I think so too
+how do the 3_20 look?
+or the 3.17 look
+cause maybe it could be slightly larger
+the shape I mean
+It's negative
+-3.14
+More the magnitude, smaller the shape
+hm.. ah okay
+true
+but the 3_14 covers more than the 3_08
+that´s why I´m wondering about 3_17
+cause a bit is missing I think
+here clearly the shape is too small
+Wait a min I'm sending for other k
+okay
+casue with 3_14 still a bit too small
+like maybe one row of pixels
+this is more tight
+so i can may be use some loose k
+as in  -3.05/-3.01
+this looks amazaing 󰀀
+you think you need a varying k parameter?
+you think you need a varying k parameter?
+no, i am not varying k
+good.. cause else the automated detection would be difficult ha haha
+one k for all, just i have used different k for us to select best k
+but I think the shape is very nice now!!
+and error bar
+yes.. that plot is very important
+for the discussion section to show that the variations are real and not due to segmentation choices
+so this image is for k=-3.17
+good
+I like it 󰀀
+092811_n_3_20.png
+k=-3.20
+so i can make a standard deviation from k=[-3.05 - -3.26] and we can use it as erro bar?
+yes.. that´s the idea 😀
+okay
+will send you too
+and any tips on posters
+i have never made one
+and it will proof that a) the segmentation is quite robust and b) that the results are independent of the chosen detailed value
+if you want to do it in corel draw
+I can send you my standard one
+i dont have corel drae
+draw
+as a draft and you can click on the text to change it and on the figs
+and is it available for mac?
+I have no clue
+asking jose
+ha hah
+he uses photoshop
+i think i'll use that too
+well. I can send you my poster and you can check for font type size and layout if you like
+sure
+jose has more non standard posters… but don´t know if that one helps
+wait.. I can send you the one of otmar
+one moment
+yes
+IRIS_utz_2.pdf
+he uses like my standard layout too
+I know that corel can be installed for 1 or 2 weeks for free as a testversion.. but no idea if for mac too
+https://www.coreldraw.com/de/product/coreldraw/mac/
+so there is a testversion for free also available for mac 😉
+yeah
+as you like...
+will make
+corel or photoshop?
+cause as mentioned for corel I can give you a corel file of one of the posters
+send
+i'll use it
+I´ll put it on google drive.. I think it has some 20 Mb
+yes
+https://drive.google.com/open?id=1VREDDS9Gbp9JYKcgSc_HqOow5nBo4Iq4
+sorry.. needed to start the notebook
+https://drive.google.com/open?id=1Z2ueba5lJkDnVlEywM-1Jig_oII_m71m
+my last two ones
+the lower one is my standard layout with the 3 columns
+the other one I got a bit more creative ha ha ha
+okay
+but you see.. you can just change the logos, authors, affiliation, and abstract text in the first block
+via copy paste
+and delete
+I hope that the file standard windows mac is the same
+then we can also exchange the document and I could help you if you need something special... but I think it is a good way to start to modify just a given document 😉
+yes
+will start after plotting scatter
+plots
+okay... perfect... so you are happy? or you need something more? cause else I wish you a happy and enjoyable evening... must be late already in india
+i have work till tomorrow
+will contact you
+and thanks and good evening 😛
+thank you.. see you tomorrow then
+yeah, will message you
+i have one last question
+what will be itenary in graz
+as you mentioned we were going in the last week somewhere

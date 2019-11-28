@@ -15,6 +15,12 @@ class Record(Base):
 
     poredata = relationship("PoreData", back_populates="record")
 
+    qs_intensity = Column(Float)
+
+    qs_std = Column(Float)
+
+    qs_contrast = Column(Float)
+
     mean_eccentricity = Column(Float)
 
     std_eccentricity = Column(Float)
@@ -43,9 +49,9 @@ class Record(Base):
 
     std_orientation = Column(Float)
 
-    mean_weighted_centroid = Column(String)
+    mean_centroid = Column(String)
 
-    std_weighted_centroid = Column(String)
+    std_centroid = Column(String)
 
     created_date = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -127,8 +133,6 @@ class PoreData(Base):
     inertia_tensor_eigvals = Column(String)
 
     orientation = Column(Float)
-
-    weighted_centroid = Column(String)
 
     centroid = Column(String)
 

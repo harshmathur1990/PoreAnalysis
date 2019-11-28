@@ -17,6 +17,8 @@ import skimage.measure
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from sklearn.cluster import KMeans
+import astropy.units as u
+import sunpy.map
 
 
 def timeit(method):
@@ -120,7 +122,21 @@ cdef list get_neighbor(tuple pixel, int shape_1, int shape_2, int type=4):
     return pixel_list
 
 
-cdef np.ndarray relaxed_pore_image_in_c(np.ndarray image, float threshold):
+class PoreSegment(object):
+    def __init__(self, segment, points_with_min_intensity):
+        self._segment = segment
+        self._points_with_min_intensity = points_with_min_intensity
+
+    @property
+    def segment(self):
+        return self._segment
+
+    @property
+    def points_with_min_intensity(self):
+        return self._points_with_min_intensity
+
+
+cdef object relaxed_pore_image_in_c(np.ndarray image, float threshold):
 
     points_with_min_intensity = np.where(
         image[200:800, 200:1000] == np.nanmin(image[200:800, 200:1000])
@@ -167,7 +183,10 @@ cdef np.ndarray relaxed_pore_image_in_c(np.ndarray image, float threshold):
                         visiting_queue.put(neighbor)
                         checking_dict[neighbor[0]][neighbor[1]] = 1.0
 
-    return segment
+    return PoreSegment(
+        segment=segment,
+        points_with_min_intensity=points_with_min_intensity
+    )
 
 
 @timeit
@@ -197,13 +216,14 @@ def get_datetime_from_name(file):
 def actual_size_mean_min_intensity(data, mask):
     mask = mask.astype(np.bool)
     image = data * mask
-    total_pixels = np.sum(mask)
-    total_intensity = np.sum(image)
+    total_pixels = np.nansum(mask)
+    total_intensity = np.nansum(image)
     mean_intensity = float(total_intensity) / total_pixels
     image[image == 0.0] = np.nan
     return total_pixels, mean_intensity, np.nanmin(image)
 
 
+'''
 def wrapper_to_initialise(rr, cc, values):
 
     mapper_dict = defaultdict(dict)
@@ -254,7 +274,7 @@ def subpartition(image, mask, n_clusters=3):
 
 
 def save_for_sub_segment(
-    image, segment, k, threshold, pore_data, file, write_path
+    image, header, segment, k, threshold, pore_data, file, write_path
 ):
     section_mask = subpartition(image, segment, n_clusters=4)
 
@@ -302,20 +322,76 @@ def save_for_sub_segment(
         pore_section_data.save()
 
         i += 1
+'''
 
 
-def save_for_this_segment(image, k, record, file, write_path):
-    mn = image.mean()
-    sd = image.std()
+def save_for_this_segment(image, header, k, record, file, write_path):
+
+    image[np.where(image < 0)] = 0.0
+
+    qs_mean = np.nanmean(image[160:330, 723:923])
+
+    image = image / qs_mean
+
+    mn = np.nanmean(image)
+
+    sd = np.nanstd(image)
+
     threshold = get_threshold(mn, sd, k)
-    segment = relaxed_pore_image(image, threshold)
+
+    pore_segment = relaxed_pore_image(image, threshold)
+
+    segment, point_with_min_intensity = pore_segment.segment, \
+        pore_segment.points_with_min_intensity
+
     kl = segment * image * 0.2 + image
+
     filename = file.name + '.' + str(threshold) + '.fits'
+
     write_file_path_image_identify = write_path / filename
 
     write_to_disk(
-        write_file_path_image_identify, kl, dict(), hdu_type=CompImageHDU
+        write_file_path_image_identify, kl, dict()
     )
+
+    gregor_map = sunpy.map.Map(image, header)
+
+    coord = gregor_map.pixel_to_world(
+        u.Quantity(
+            point_with_min_intensity[0][0],
+            u.pixel
+        ),
+        u.Quantity(
+            point_with_min_intensity[1][0],
+            u.pixel
+        )
+    )
+
+    x = coord.heliocentric.x.value
+
+    y = coord.heliocentric.y.value
+
+    z = coord.heliocentric.z.value
+
+    theta = np.arctan(z / np.sqrt((x**2) + (y**2)))
+
+    phi = np.arctan(y / x)
+
+    uncorrected_distance_per_pixel = gregor_map.rsun_meters.value * 0.0253 \
+        / gregor_map.rsun_obs.value
+
+    # x is normal x axis, i.e. horizontal, not pythons!!!
+
+    corrected_distance_per_pixel_x = uncorrected_distance_per_pixel \
+        / np.cos(phi)
+
+    # y is normal y axis, i.e. vertical, not pythons!!!
+
+    corrected_distance_per_pixel_y = uncorrected_distance_per_pixel \
+        / np.cos(theta)
+
+    area_per_pixel = corrected_distance_per_pixel_x * \
+        corrected_distance_per_pixel_y
 
     segment_path = file.name + '.' + str(threshold) + '.segment.fits'
     write_file_path_image_segment = write_path / segment_path
@@ -346,15 +422,41 @@ def save_for_this_segment(image, k, record, file, write_path):
 
         pore_data.eccentricity = region.eccentricity
 
-        pore_data.size = total_pixels
+        pore_data.size = total_pixels * area_per_pixel
 
         pore_data.mean_intensity = mean_intensity
 
         pore_data.min_intensity = min_value
 
-        pore_data.major_axis_length = region.major_axis_length
+        uncorrcted_major_length = region.major_axis_length
 
-        pore_data.minor_axis_length = region.minor_axis_length
+        x_component_maj = uncorrcted_major_length * np.cos(region.orientation)
+
+        y_component_maj = uncorrcted_major_length * np.sin(region.orientation)
+
+        corr_x_maj = x_component_maj * corrected_distance_per_pixel_y
+
+        corr_y_maj = y_component_maj * corrected_distance_per_pixel_x
+
+        corr_major_length = np.sqrt(corr_x_maj ** 2 + corr_y_maj ** 2)
+
+        uncorrcted_minor_length = region.minor_axis_length
+
+        x_component_minor = uncorrcted_minor_length * np.cos(
+            region.orientation)
+
+        y_component_minor = uncorrcted_minor_length * np.sin(
+            region.orientation)
+
+        corr_x_minor = x_component_minor * corrected_distance_per_pixel_y
+
+        corr_y_minor = y_component_minor * corrected_distance_per_pixel_x
+
+        corr_minor_length = np.sqrt(corr_x_minor ** 2 + corr_y_minor ** 2)
+
+        pore_data.major_axis_length = corr_major_length
+
+        pore_data.minor_axis_length = corr_minor_length
 
         pore_data.inertia_tensor_eigvals = str(
             region.inertia_tensor_eigvals
@@ -362,15 +464,30 @@ def save_for_this_segment(image, k, record, file, write_path):
 
         pore_data.orientation = region.orientation
 
-        pore_data.weighted_centroid = str(region.weighted_centroid)
+        _centroid = gregor_map.pixel_to_world(
+            u.Quantity(
+                region.weighted_centroid[1],
+                u.pixel
+            ),
+            u.Quantity(
+                region.weighted_centroid[0],
+                u.pixel
+            )
+        )
 
-        pore_data.centroid = str(region.centroid)
+        centroid = (
+            _centroid.heliocentric.x.value,
+            _centroid.heliocentric.y.value,
+            _centroid.heliocentric.z.value
+        )
+
+        pore_data.centroid = str(centroid)
 
     pore_data.save()
 
-    save_for_sub_segment(
-        image, segment, k, threshold, pore_data, file, write_path
-    )
+    # save_for_sub_segment(
+    #     image, header, segment, k, threshold, pore_data, file, write_path
+    # )
 
 
 def get_threshold(mn, sd, k):
@@ -380,6 +497,31 @@ def get_threshold(mn, sd, k):
 @timeit
 def read_file(file):
     return sunpy.io.fits.read(file)[0]
+
+
+@timeit
+def populate_qs_mesn_and_std(base_path):
+    everything = base_path.glob('**/*')
+    files = [x for x in everything if x.is_file() and x.name.endswith('.fts')]
+
+    files.sort(key=get_datetime_from_name)
+
+    for file in files:
+        record = Record.find_by_date(
+            date_object=get_datetime_from_name(file)
+        )
+
+        image, header = read_file(file)
+
+        record.qs_intensity = np.nanmean(
+            image[160:330, 723:923]
+        )
+
+        record.qs_std = np.nanstd(
+            image[160:330, 723:923]
+        )
+
+        record.save()
 
 
 @timeit
@@ -393,18 +535,17 @@ def do_all(base_path, write_path, dividor, remainder):
         if index % dividor != remainder:
             continue
 
-        image, _ = read_file(file)
-        image[np.where(image < 0)] = 0.0
-        image = image / np.max(image)
+        image, header = read_file(file)
+
         k_list = [
             -3.02,
             -3.05,
-            -3.23,
-            -3.11,
             -3.08,
+            -3.11,
             -3.14,
             -3.17,
             -3.20,
+            -3.23,
             -3.26
         ]
 
@@ -412,8 +553,16 @@ def do_all(base_path, write_path, dividor, remainder):
             date_time=get_datetime_from_name(file)
         )
 
+        record.qs_intensity = np.nanmean(
+            image[160:330, 723:923]
+        )
+
+        record.qs_std = np.nanstd(
+            image[160:330, 723:923]
+        )
+
         record = record.save()
 
         for k in k_list:
 
-            save_for_this_segment(image, k, record, file, write_path)
+            save_for_this_segment(image, header, k, record, file, write_path)

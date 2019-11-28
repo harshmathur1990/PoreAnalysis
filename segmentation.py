@@ -24,10 +24,8 @@ import matplotlib.ticker as ticker
 normal_field_list = [
     'eccentricity', 'size', 'mean_intensity',
     'major_axis_length', 'minor_axis_length',
-    'orientation'
+    'orientation', 'qs_intensity', 'qs_contrast'
 ]
-
-comp_field_list = ['weighted_centroid']
 
 
 k_list = [
@@ -334,7 +332,7 @@ def populate_derived_fields():
 
         orientation_list = list()
 
-        weighted_centroid_list = list()
+        centroid_list = list()
 
         for poredata in poredata_list:
             eccentricity_list.append(poredata.eccentricity)
@@ -344,9 +342,9 @@ def populate_derived_fields():
             major_axis_length_list.append(poredata.major_axis_length)
             minor_axis_length_list.append(poredata.minor_axis_length)
             orientation_list.append(poredata.orientation)
-            weighted_centroid_list.append(
+            centroid_list.append(
                 list(
-                    make_tuple(poredata.weighted_centroid)
+                    make_tuple(poredata.centroid)
                 )
             )
 
@@ -371,17 +369,17 @@ def populate_derived_fields():
         a_record.mean_minor_axis_length = np.mean(minor_axis_length_list)
         a_record.std_minor_axis_length = np.std(minor_axis_length_list)
 
-        a_record.mean_weighted_centroid = str(
+        a_record.mean_centroid = str(
             tuple(
                 np.mean(
-                    weighted_centroid_list, axis=0
+                    centroid_list, axis=0
                 )
             )
         )
-        a_record.std_weighted_centroid = str(
+        a_record.std_centroid = str(
             tuple(
                 np.std(
-                    weighted_centroid_list, axis=0
+                    centroid_list, axis=0
                 )
             )
         )
@@ -562,6 +560,8 @@ def get_scatter_plots(field1, field2, k_value=None):
         )
     )
 
+    fig = plt.figure()
+
     plt.scatter(
         k1_dict[k_value],
         k2_dict[k_value],
@@ -580,7 +580,11 @@ def get_scatter_plots(field1, field2, k_value=None):
         plt.title('{} vs {} Scatter Plot'.format(field1, field2))
         plt.xlabel('{}'.format(field2))
         plt.ylabel('{}'.format(field1))
+
     plt.legend()
+
+    fig.tight_layout()
+
     plt.show()
 
 
@@ -597,7 +601,7 @@ def error_plot_field_vs_date(field, x_y=0):
 
         date_list.append(a_record.date_time)
 
-        if field in ['weighted_centroid', 'centroid']:
+        if field == 'centroid':
             value = make_tuple(getattr(a_record, 'mean_' + field))[x_y]
             value_list.append(
                 value
@@ -607,25 +611,49 @@ def error_plot_field_vs_date(field, x_y=0):
                 valueerr
             )
         else:
-            value_list.append(
-                getattr(a_record, 'mean_' + field)
-            )
-            yerr.append(
-                getattr(a_record, 'std_' + field)
-            )
+            if not field.startswith('qs'):
+                value_list.append(
+                    getattr(a_record, 'mean_' + field)
+                )
+                yerr.append(
+                    getattr(a_record, 'std_' + field)
+                )
+            else:
+                if field != 'qs_contrast':
+                    value_list.append(
+                        getattr(a_record, field)
+                    )
+                    yerr.append(
+                        getattr(a_record, 'qs_std')
+                    )
+                else:
+                    value_list.append(
+                        getattr(a_record, field)
+                    )
+
+    fig = plt.figure()
 
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+
     plt.gca().xaxis.set_major_locator(mdates.DayLocator())
+
     _start_date = datetime.datetime(2017, 9, 28, 8, 51, 20)
+
     x_ticks = list()
+
     for i in range(0, 9):
         x_ticks.append(
             _start_date + timedelta(minutes=8 * i)
         )
 
-    plt.errorbar(date_list, value_list, yerr=yerr, fmt='b', ecolor='yellow')
+    if len(yerr) != 0:
+        plt.errorbar(
+            date_list, value_list, yerr=yerr, fmt='b', ecolor='yellow'
+        )
+    else:
+        plt.plot(date_list, value_list)
 
-    if field not in ['weighted_centroid', 'centroid']:
+    if field != 'centroid':
         plt.title('{} vs Time Plot'.format(snake_to_camel(field)))
     else:
         coord = 'X' if x_y == 0 else 'Y'
@@ -637,7 +665,8 @@ def error_plot_field_vs_date(field, x_y=0):
     plt.xticks(x_ticks, rotation=45)
     plt.gcf().autofmt_xdate()
     plt.legend()
-    if field not in ['weighted_centroid', 'centroid']:
+    fig.tight_layout()
+    if field != 'centroid':
         plt.savefig('{}_vs_time.png'.format(field), format='png', dpi=300)
     else:
         plt.savefig(
@@ -662,7 +691,7 @@ def plot_field_vs_date(field, k_value=None, x_y=0):
         poredata_list = a_record.poredata
 
         for poredata in poredata_list:
-            if field in ['weighted_centroid', 'centroid']:
+            if field == 'centroid':
                 value = make_tuple(getattr(poredata, field))[x_y]
                 k_dict[poredata.k].append(
                     value
@@ -686,7 +715,7 @@ def plot_field_vs_date(field, k_value=None, x_y=0):
             plt.scatter(
                 date_list, value_list, label='Scatter k={}'.format(k)
             )
-    if field not in ['weighted_centroid', 'centroid']:
+    if field != 'centroid':
         plt.title('{} vs Date Time Plot'.format(field))
     else:
         coord = 'x' if x_y == 0 else 'y'
@@ -700,17 +729,17 @@ def plot_field_vs_date(field, k_value=None, x_y=0):
 
 
 def save_all_plots():
-    normal_field_list = [
-        'eccentricity', 'size', 'mean_intensity',
-        'major_axis_length', 'minor_axis_length',
-        'orientation'
-    ]
+    # normal_field_list = [
+    #     'eccentricity', 'size', 'mean_intensity',
+    #     'major_axis_length', 'minor_axis_length',
+    #     'orientation'
+    # ]
 
     for a_field in normal_field_list:
         error_plot_field_vs_date(a_field)
 
-    error_plot_field_vs_date('weighted_centroid', 0)
-    error_plot_field_vs_date('weighted_centroid', 1)
+    error_plot_field_vs_date('centroid', 0)
+    error_plot_field_vs_date('centroid', 1)
 
     get_error_scatter_plots('eccentricity', 'size')
     get_error_scatter_plots('eccentricity', 'mean_intensity')
@@ -719,7 +748,7 @@ def save_all_plots():
     get_error_scatter_plots('mean_intensity', 'orientation')
     get_error_scatter_plots('major_axis_length', 'minor_axis_length')
     get_error_scatter_plots(
-        ('weighted_centroid', 0, 'X'), ('weighted_centroid', 1, 'Y')
+        ('centroid', 0, 'X'), ('centroid', 1, 'Y')
     )
 
 
@@ -731,3 +760,4 @@ if __name__ == '__main__':
     dividor = int(sys.argv[3])
     remainder = int(sys.argv[4])
     seg.do_all(base_path, write_path, dividor, remainder)
+    # seg.populate_qs_mesn_and_std(base_path)
