@@ -19,6 +19,7 @@ from collections import defaultdict
 from sklearn.cluster import KMeans
 import astropy.units as u
 import sunpy.map
+import skimage.draw
 
 
 def timeit(method):
@@ -344,16 +345,6 @@ def save_for_this_segment(image, header, k, record, file, write_path):
     segment, point_with_min_intensity = pore_segment.segment, \
         pore_segment.points_with_min_intensity
 
-    kl = segment * image * 0.2 + image
-
-    filename = file.name + '.' + str(threshold) + '.fits'
-
-    write_file_path_image_identify = write_path / filename
-
-    write_to_disk(
-        write_file_path_image_identify, kl, dict()
-    )
-
     gregor_map = sunpy.map.Map(image, header)
 
     coord = gregor_map.pixel_to_world(
@@ -403,13 +394,22 @@ def save_for_this_segment(image, header, k, record, file, write_path):
     a, b, c = actual_size_mean_min_intensity(
         image, segment
     )
+
     total_pixels, mean_intensity, min_value = a, b, c
+
+    only_pore = image.copy()
+
+    max_pore = np.nanmax(image * segment)
+
+    rr, cc = np.where(segment == 1)
+
+    only_pore[rr, cc] = np.abs(only_pore[rr, cc] - max_pore)
 
     pore_data = PoreData()
 
     region_props = skimage.measure.regionprops(
         label_image=segment,
-        intensity_image=image,
+        intensity_image=only_pore,
         cache=True
     )
 
@@ -483,6 +483,46 @@ def save_for_this_segment(image, header, k, record, file, write_path):
 
         pore_data.centroid = str(centroid)
 
+        kl = segment * image * 0.2 + image
+
+        rr, cc = skimage.draw.ellipse_perimeter(
+            int(region.weighted_centroid[0]),
+            int(region.weighted_centroid[1]),
+            int(region.minor_axis_length / 2),
+            int(region.major_axis_length / 2),
+            region.orientation
+        )
+
+        max_pore = np.nanmax(kl)
+
+        kl[rr, cc] = max_pore + 1
+
+        larger_image = np.zeros(image.shape[0], 2 * image.shape[1])
+
+        larger_image[
+            0:image.shape[0],
+            0:image.shape[1]
+        ] = kl[
+            0:image.shape[0],
+            0:image.shape[1]
+        ]
+
+        larger_image[
+            0:image.shape[0],
+            image.shape[1]:2 * image.shape[1]
+        ] = kl[
+            0:image.shape[0],
+            0:image.shape[1]
+        ]
+
+        filename = file.name + '.' + str(threshold) + '.fits'
+
+        write_file_path_image_identify = write_path / filename
+
+        write_to_disk(
+            write_file_path_image_identify, kl, dict()
+        )
+
     pore_data.save()
 
     # save_for_sub_segment(
@@ -522,6 +562,19 @@ def populate_qs_mesn_and_std(base_path):
         )
 
         record.save()
+
+
+@timeit
+def populate_original_images_for_comparison(data_path, results_path):
+    everything = results_path.glob('**/*')
+    files = [
+        x for x in everything if x.is_file() and
+        x.name.endswith('.fts') and not x.name.endswith('.segment.fts')
+    ]
+
+    files.sort(key=get_datetime_from_name)
+
+    # for file in files:
 
 
 @timeit

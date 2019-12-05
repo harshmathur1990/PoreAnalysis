@@ -402,6 +402,10 @@ def get_error_scatter_plots(field1, field2):
 
     y_list = list()
 
+    xerr = list()
+
+    yerr = list()
+
     for a_record in all_records:
         date_list.append(a_record.date_time)
 
@@ -417,9 +421,24 @@ def get_error_scatter_plots(field1, field2):
                 )[field2[1]]
             )
 
+            xerr.append(
+                list(
+                    make_tuple(
+                        getattr(
+                            a_record,
+                            'std_' + field2[0]
+                        )
+                    )
+                )[field2[1]]
+            )
+
         else:
             x_list.append(
                 getattr(a_record, 'mean_' + field2)
+            )
+
+            xerr.append(
+                getattr(a_record, 'std_' + field2)
             )
 
         if isinstance(field1, tuple):
@@ -433,9 +452,24 @@ def get_error_scatter_plots(field1, field2):
                     )
                 )[field1[1]]
             )
+
+            yerr.append(
+                list(
+                    make_tuple(
+                        getattr(
+                            a_record,
+                            'std_' + field1[0]
+                        )
+                    )
+                )[field1[1]]
+            )
         else:
             y_list.append(
                 getattr(a_record, 'mean_' + field1)
+            )
+
+            yerr.append(
+                getattr(a_record, 'std_' + field1)
             )
 
         time_in_sec.append(
@@ -446,24 +480,62 @@ def get_error_scatter_plots(field1, field2):
             )
         )
 
-    time_in_sec -= np.min(time_in_sec)
+    first_time_in_sec = time_in_sec[0:76]
 
-    time_in_sec = time_in_sec / np.max(time_in_sec)
+    first_time_in_sec -= np.min(first_time_in_sec)
 
-    time_in_sec *= 256
+    first_time_in_sec = first_time_in_sec / np.max(first_time_in_sec)
 
-    time_in_sec = np.int64(time_in_sec)
+    first_time_in_sec *= 256
 
-    colormap = cm.rainbow(
+    first_time_in_sec = np.int64(first_time_in_sec)
+
+    first_colormap = cm.rainbow(
         np.arange(
-            np.max(time_in_sec) + 1
+            np.max(first_time_in_sec) + 1
         )
     )
 
+    last_time_in_sec = time_in_sec[76:]
+
+    last_time_in_sec -= np.min(last_time_in_sec)
+
+    last_time_in_sec = last_time_in_sec / np.max(last_time_in_sec)
+
+    last_time_in_sec *= 256
+
+    last_time_in_sec = np.int64(last_time_in_sec)
+
+    last_colormap = cm.rainbow(
+        np.arange(
+            np.max(last_time_in_sec) + 1
+        )
+    )
+
+    # plt.scatter(
+    #     x_list,
+    #     y_list,
+    #     c=colormap[time_in_sec]
+    # )
+
+    fig = plt.figure()
+
     plt.scatter(
-        x_list,
-        y_list,
-        c=colormap[time_in_sec]
+        x_list[0:76],
+        y_list[0:76],
+        # yerr=yerr[0:76],
+        # xerr=xerr[0:76],
+        marker='o',
+        c=first_colormap[first_time_in_sec]
+    )
+
+    plt.scatter(
+        x_list[76:],
+        y_list[76:],
+        # yerr=yerr[76:],
+        # xerr=xerr[76:],
+        marker='*',
+        c=last_colormap[last_time_in_sec]
     )
 
     if isinstance(field1, tuple):
@@ -484,108 +556,37 @@ def get_error_scatter_plots(field1, field2):
         )
         plt.xlabel('{}'.format(snake_to_camel(field2)))
         plt.ylabel('{}'.format(snake_to_camel(field1)))
+
     plt.legend()
+
+    fig.tight_layout()
+
+    # annot = plt.annotate(
+    #     "",
+    #     xy=(0, 0),
+    #     xytext=(20, 20),
+    #     textcoords="offset points",
+    #     bbox=dict(boxstyle="round", fc="w"),
+    #     arrowprops=dict(arrowstyle="->")
+    # )
+
+    plt.show()
+
     if isinstance(field1, tuple):
-        plt.savefig(
+
+        fig.savefig(
             '{}_{}_vs_{}_scatter.png'.format(field1[0], field1[2], field2[2]),
             format='png',
             dpi=300
         )
     else:
-        plt.savefig(
+        fig.savefig(
             '{}_vs_{}_scatter.png'.format(field1, field2),
             format='png',
             dpi=300
         )
     plt.clf()
     plt.cla()
-
-
-def get_scatter_plots(field1, field2, k_value=None):
-    all_records = model.Record.get_all()
-
-    date_list = list()
-
-    k1_dict = defaultdict(list)
-
-    k2_dict = defaultdict(list)
-
-    time_in_sec = list()
-
-    for a_record in all_records:
-        date_list.append(a_record.date_time)
-
-        poredata_list = a_record.poredata
-
-        for poredata in poredata_list:
-            if isinstance(field2, tuple):
-                k1_dict[poredata.k].append(
-                    list(make_tuple(getattr(poredata, field2[0])))[field2[1]]
-                )
-
-            else:
-                k1_dict[poredata.k].append(
-                    getattr(poredata, field2)
-                )
-
-            if isinstance(field1, tuple):
-                k2_dict[poredata.k].append(
-                    list(make_tuple(getattr(poredata, field1[0])))[field1[1]]
-                )
-
-            else:
-                k2_dict[poredata.k].append(
-                    getattr(poredata, field1)
-                )
-
-        time_in_sec.append(
-            int(
-                sunpy.time.parse_time(
-                    a_record.date_time.isoformat()
-                ).jd * 86400
-            )
-        )
-
-    time_in_sec -= np.min(time_in_sec)
-
-    time_in_sec = time_in_sec / np.max(time_in_sec)
-
-    time_in_sec *= 256
-
-    time_in_sec = np.int64(time_in_sec)
-
-    colormap = cm.rainbow(
-        np.arange(
-            np.max(time_in_sec) + 1
-        )
-    )
-
-    fig = plt.figure()
-
-    plt.scatter(
-        k1_dict[k_value],
-        k2_dict[k_value],
-        c=colormap[time_in_sec]
-    )
-
-    if isinstance(field1, tuple):
-        plt.title(
-            '{} {} vs {} Scatter Plot'.format(
-                field1[0], field1[2], field2[2]
-            )
-        )
-        plt.xlabel('{}'.format(field2[2]))
-        plt.ylabel('{}'.format(field1[2]))
-    else:
-        plt.title('{} vs {} Scatter Plot'.format(field1, field2))
-        plt.xlabel('{}'.format(field2))
-        plt.ylabel('{}'.format(field1))
-
-    plt.legend()
-
-    fig.tight_layout()
-
-    plt.show()
 
 
 def error_plot_field_vs_date(field, x_y=0):
@@ -666,6 +667,7 @@ def error_plot_field_vs_date(field, x_y=0):
     plt.gcf().autofmt_xdate()
     plt.legend()
     fig.tight_layout()
+    plt.show()
     if field != 'centroid':
         plt.savefig('{}_vs_time.png'.format(field), format='png', dpi=300)
     else:
@@ -676,58 +678,6 @@ def error_plot_field_vs_date(field, x_y=0):
     plt.cla()
 
 
-def plot_field_vs_date(field, k_value=None, x_y=0):
-    all_records = model.Record.get_all()
-
-    date_list = list()
-
-    k_dict = defaultdict(list)
-
-    # time_in_sec = list()
-
-    for a_record in all_records:
-        date_list.append(a_record.date_time)
-
-        poredata_list = a_record.poredata
-
-        for poredata in poredata_list:
-            if field == 'centroid':
-                value = make_tuple(getattr(poredata, field))[x_y]
-                k_dict[poredata.k].append(
-                    value
-                )
-            else:
-                k_dict[poredata.k].append(
-                    getattr(poredata, field)
-                )
-
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-    plt.gca().xaxis.set_major_locator(mdates.DayLocator())
-    _start_date = datetime.datetime(2017, 9, 28, 8, 51, 20)
-    x_ticks = list()
-    for i in range(0, 9):
-        x_ticks.append(
-            _start_date + timedelta(minutes=8 * i)
-        )
-    for k, value_list in k_dict.items():
-        if not k_value or k_value == k:
-            plt.plot(date_list, value_list, label='Plot k={}'.format(k))
-            plt.scatter(
-                date_list, value_list, label='Scatter k={}'.format(k)
-            )
-    if field != 'centroid':
-        plt.title('{} vs Date Time Plot'.format(field))
-    else:
-        coord = 'x' if x_y == 0 else 'y'
-        plt.title('{} {} coordinate vs Date Time Plot'.format(field, coord))
-    plt.xlabel('Time')
-    plt.ylabel(field)
-    plt.xticks(x_ticks, rotation=45)
-    plt.gcf().autofmt_xdate()
-    plt.legend()
-    plt.show()
-
-
 def save_all_plots():
     # normal_field_list = [
     #     'eccentricity', 'size', 'mean_intensity',
@@ -735,11 +685,11 @@ def save_all_plots():
     #     'orientation'
     # ]
 
-    for a_field in normal_field_list:
-        error_plot_field_vs_date(a_field)
+    # for a_field in normal_field_list:
+        # error_plot_field_vs_date(a_field)
 
-    error_plot_field_vs_date('centroid', 0)
-    error_plot_field_vs_date('centroid', 1)
+    # error_plot_field_vs_date('centroid', 0)
+    # error_plot_field_vs_date('centroid', 1)
 
     get_error_scatter_plots('eccentricity', 'size')
     get_error_scatter_plots('eccentricity', 'mean_intensity')
